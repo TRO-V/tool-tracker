@@ -3,6 +3,9 @@
  * 
  * Paste this code into Google Apps Script (script.google.com)
  * See SETUP.md for detailed instructions
+ * 
+ * Tools Sheet Columns:
+ * Tool ID | Status | Borrowed By | Borrowed At | Returned By | Returned At
  */
 
 // Handle POST requests (borrow/return actions)
@@ -40,7 +43,6 @@ function doGet(e) {
     }
     
     const data = toolsSheet.getDataRange().getValues();
-    const headers = data[0];
     const tools = [];
     
     for (let i = 1; i < data.length; i++) {
@@ -50,7 +52,9 @@ function doGet(e) {
           id: row[0],
           status: row[1] || 'Available',
           borrowedBy: row[2] || '',
-          borrowedAt: row[3] ? formatDate(row[3]) : ''
+          borrowedAt: row[3] ? formatDate(row[3]) : '',
+          returnedBy: row[4] || '',
+          returnedAt: row[5] ? formatDate(row[5]) : ''
         });
       }
     }
@@ -60,6 +64,7 @@ function doGet(e) {
     return jsonResponse({ tools: [], error: error.toString() });
   }
 }
+
 
 // Log action to Logs sheet
 function logAction(ss, tool, person, action) {
@@ -82,8 +87,8 @@ function updateToolStatus(ss, tool, person, action) {
   // Create Tools sheet if it doesn't exist
   if (!toolsSheet) {
     toolsSheet = ss.insertSheet('Tools');
-    toolsSheet.appendRow(['Tool ID', 'Status', 'Borrowed By', 'Borrowed At']);
-    toolsSheet.getRange(1, 1, 1, 4).setFontWeight('bold');
+    toolsSheet.appendRow(['Tool ID', 'Status', 'Borrowed By', 'Borrowed At', 'Returned By', 'Returned At']);
+    toolsSheet.getRange(1, 1, 1, 6).setFontWeight('bold');
   }
   
   const data = toolsSheet.getDataRange().getValues();
@@ -99,19 +104,20 @@ function updateToolStatus(ss, tool, person, action) {
   
   if (action === 'borrow') {
     if (toolRow > 0) {
-      // Update existing row
-      toolsSheet.getRange(toolRow, 2, 1, 3).setValues([['Borrowed', person, new Date()]]);
+      // Update existing row - set borrowed info, clear returned info
+      toolsSheet.getRange(toolRow, 2, 1, 5).setValues([['Borrowed', person, new Date(), '', '']]);
     } else {
-      // Add new tool
-      toolsSheet.appendRow([tool, 'Borrowed', person, new Date()]);
+      // Add new tool as borrowed
+      toolsSheet.appendRow([tool, 'Borrowed', person, new Date(), '', '']);
     }
   } else if (action === 'return') {
     if (toolRow > 0) {
-      // Update existing row
-      toolsSheet.getRange(toolRow, 2, 1, 3).setValues([['Available', '', '']]);
+      // Update existing row - keep borrow info, add return info
+      toolsSheet.getRange(toolRow, 2).setValue('Available');
+      toolsSheet.getRange(toolRow, 5, 1, 2).setValues([[person, new Date()]]);
     } else {
-      // Add new tool as available
-      toolsSheet.appendRow([tool, 'Available', '', '']);
+      // Add new tool as available (edge case - returning unknown tool)
+      toolsSheet.appendRow([tool, 'Available', '', '', person, new Date()]);
     }
   }
 }

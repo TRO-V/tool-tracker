@@ -12,7 +12,7 @@
             min-height: 100vh;
             padding: 20px;
         }
-        .container { max-width: 900px; margin: 0 auto; }
+        .container { max-width: 1200px; margin: 0 auto; }
         h1 { color: #333; margin-bottom: 8px; }
         .subtitle { color: #666; margin-bottom: 24px; }
         .refresh-btn {
@@ -68,7 +68,9 @@
                         <th>Tool ID</th>
                         <th>Status</th>
                         <th>Borrowed By</th>
-                        <th class="hide-mobile">Since</th>
+                        <th class="hide-mobile">Borrowed At</th>
+                        <th>Returned By</th>
+                        <th class="hide-mobile">Returned At</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody"></tbody>
@@ -114,6 +116,8 @@
                         </td>
                         <td>${escapeHtml(tool.borrowedBy || '-')}</td>
                         <td class="hide-mobile">${escapeHtml(tool.borrowedAt || '-')}</td>
+                        <td>${escapeHtml(tool.returnedBy || '-')}</td>
+                        <td class="hide-mobile">${escapeHtml(tool.returnedAt || '-')}</td>
                     </tr>
                 `).join('');
                 
