@@ -103,7 +103,7 @@ function updateToolStatus(ss, tool, person, action) {
   
   if (action === 'borrow') {
     if (toolRow > 0) {
-      // Update existing: set status, borrowed by, borrowed at
+      // Update existing: set status, borrowed by, borrowed at (only columns 2-4, preserve 5-6)
       toolsSheet.getRange(toolRow, 2, 1, 3).setValues([['Borrowed', person, new Date()]]);
     } else {
       // Tool not pre-registered, add it
@@ -115,8 +115,10 @@ function updateToolStatus(ss, tool, person, action) {
       const currentBorrowedBy = data[toolRow - 1][2] || person;
       const currentBorrowedAt = data[toolRow - 1][3] || new Date();
       
-      // Clear current borrow, set last borrowed info
-      toolsSheet.getRange(toolRow, 2, 1, 5).setValues([['Available', '', '', currentBorrowedBy, currentBorrowedAt]]);
+      // Set status to Available, clear borrowed by/at (columns 2-4)
+      toolsSheet.getRange(toolRow, 2, 1, 3).setValues([['Available', '', '']]);
+      // Set last borrowed info (columns 5-6)
+      toolsSheet.getRange(toolRow, 5, 1, 2).setValues([[currentBorrowedBy, currentBorrowedAt]]);
     } else {
       // Tool not found, add as available
       toolsSheet.appendRow([tool, 'Available', '', '', person, new Date()]);
