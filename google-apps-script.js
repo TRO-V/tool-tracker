@@ -29,9 +29,16 @@ function doPost(e) {
     
     // Update status (row 2)
     if (action === 'borrow') {
-      toolSheet.getRange(2, 1, 1, 4).setValues([[tool, 'Borrowed', person, new Date()]]);
+      // Set borrowed info (columns 2-4), preserve last borrowed (columns 5-6)
+      toolSheet.getRange(2, 2, 1, 3).setValues([['Borrowed', person, new Date()]]);
     } else if (action === 'return') {
-      toolSheet.getRange(2, 1, 1, 4).setValues([[tool, 'Available', '', '']]);
+      // Get current borrow info to save as last borrowed
+      const currentData = toolSheet.getRange(2, 3, 1, 2).getValues()[0];
+      const lastBorrowedBy = currentData[0] || person;
+      const lastBorrowedAt = currentData[1] || new Date();
+      
+      // Clear current borrow, set last borrowed
+      toolSheet.getRange(2, 2, 1, 5).setValues([['Available', '', '', lastBorrowedBy, lastBorrowedAt]]);
     }
     
     // Add to log history
@@ -58,7 +65,7 @@ function doGet() {
         setupToolSheet(toolSheet);
       }
       
-      const statusRow = toolSheet.getRange(2, 1, 1, 4).getValues()[0];
+      const statusRow = toolSheet.getRange(2, 1, 1, 6).getValues()[0];
       
       // Get recent logs (rows 5 onwards)
       const lastRow = toolSheet.getLastRow();
@@ -77,6 +84,8 @@ function doGet() {
         status: statusRow[1] || 'Available',
         borrowedBy: statusRow[2] || '',
         borrowedAt: statusRow[3] ? formatDate(statusRow[3]) : '',
+        lastBorrowedBy: statusRow[4] || '',
+        lastBorrowedAt: statusRow[5] ? formatDate(statusRow[5]) : '',
         logs: logs
       });
     }
@@ -88,10 +97,10 @@ function doGet() {
 }
 
 function setupToolSheet(sheet) {
-  // Status section
-  sheet.getRange(1, 1, 1, 4).setValues([['Tool ID', 'Status', 'Borrowed By', 'Borrowed At']]);
-  sheet.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#f0f0f0');
-  sheet.getRange(2, 1, 1, 4).setValues([[sheet.getName(), 'Available', '', '']]);
+  // Status section - 6 columns now
+  sheet.getRange(1, 1, 1, 6).setValues([['Tool ID', 'Status', 'Borrowed By', 'Borrowed At', 'Last Borrowed By', 'Last Borrowed At']]);
+  sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#f0f0f0');
+  sheet.getRange(2, 1, 1, 6).setValues([[sheet.getName(), 'Available', '', '', '', '']]);
   
   // Log section header
   sheet.getRange(4, 1, 1, 3).setValues([['Timestamp', 'Person', 'Action']]);
