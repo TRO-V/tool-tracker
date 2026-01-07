@@ -1,16 +1,14 @@
 /**
  * Tool Tracking System - Google Apps Script
  * 
- * Tools Sheet Columns:
- * Tool ID | Status | Borrowed By | Borrowed At | Last Borrowed By | Last Borrowed At
- * 
- * - Pre-populate Tool ID column with your tools
- * - When borrowed: fills Borrowed By + Borrowed At
- * - When returned: clears Borrowed By/At, copies to Last Borrowed By/At
- * - Logs sheet keeps full history
+ * Each tool has its own sheet (EPJ_1, EPJ_2, etc.) with:
+ * - Row 1: Headers
+ * - Row 2: Current status
+ * - Row 4+: Log history
  */
 
-// Handle POST requests (borrow/return actions)
+const TOOLS = ['EPJ_1', 'EPJ_2', 'EPJ_3', 'EPJ_4', 'EPJ_5'];
+
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
@@ -21,12 +19,24 @@ function doPost(e) {
     }
     
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let toolSheet = ss.getSheetByName(tool);
     
-    // Log the action
-    logAction(ss, tool, person, action);
+    // Create sheet if it doesn't exist
+    if (!toolSheet) {
+      toolSheet = ss.insertSheet(tool);
+      setupToolSheet(toolSheet);
+    }
     
-    // Update tool status
-    updateToolStatus(ss, tool, person, action);
+    // Update status (row 2)
+    if (action === 'borrow') {
+      toolSheet.getRange(2, 1, 1, 4).setValues([[tool, 'Borrowed', person, new Date()]]);
+    } else if (action === 'return') {
+      toolSheet.getRange(2, 1, 1, 4).setValues([[tool, 'Available', '', '']]);
+    }
+    
+    // Add to log history
+    const lastRow = Math.max(toolSheet.getLastRow(), 4);
+    toolSheet.getRange(lastRow + 1, 1, 1, 4).setValues([[new Date(), person, action, '']]);
     
     return jsonResponse({ success: true, message: `Tool ${action}ed successfully` });
   } catch (error) {
@@ -34,31 +44,41 @@ function doPost(e) {
   }
 }
 
-// Handle GET requests (fetch tool status)
-function doGet(e) {
+function doGet() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const toolsSheet = ss.getSheetByName('Tools');
-    
-    if (!toolsSheet) {
-      return jsonResponse({ tools: [], error: 'Tools sheet not found' });
-    }
-    
-    const data = toolsSheet.getDataRange().getValues();
     const tools = [];
-    
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      if (row[0]) {
-        tools.push({
-          id: row[0],
-          status: row[1] || 'Available',
-          borrowedBy: row[2] || '',
-          borrowedAt: row[3] ? formatDate(row[3]) : '',
-          lastBorrowedBy: row[4] || '',
-          lastBorrowedAt: row[5] ? formatDate(row[5]) : ''
-        });
+
+    for (const toolId of TOOLS) {
+      let toolSheet = ss.getSheetByName(toolId);
+      
+      if (!toolSheet) {
+        // Create sheet if missing
+        toolSheet = ss.insertSheet(toolId);
+        setupToolSheet(toolSheet);
       }
+      
+      const statusRow = toolSheet.getRange(2, 1, 1, 4).getValues()[0];
+      
+      // Get recent logs (rows 5 onwards)
+      const lastRow = toolSheet.getLastRow();
+      let logs = [];
+      if (lastRow >= 5) {
+        const logData = toolSheet.getRange(5, 1, lastRow - 4, 3).getValues();
+        logs = logData.map(row => ({
+          timestamp: row[0] ? formatDate(row[0]) : '',
+          person: row[1] || '',
+          action: row[2] || ''
+        })).reverse().slice(0, 10); // Last 10 logs
+      }
+      
+      tools.push({
+        id: toolId,
+        status: statusRow[1] || 'Available',
+        borrowedBy: statusRow[2] || '',
+        borrowedAt: statusRow[3] ? formatDate(statusRow[3]) : '',
+        logs: logs
+      });
     }
     
     return jsonResponse({ tools: tools });
@@ -67,63 +87,15 @@ function doGet(e) {
   }
 }
 
-
-// Log action to Logs sheet
-function logAction(ss, tool, person, action) {
-  let logsSheet = ss.getSheetByName('Logs');
+function setupToolSheet(sheet) {
+  // Status section
+  sheet.getRange(1, 1, 1, 4).setValues([['Tool ID', 'Status', 'Borrowed By', 'Borrowed At']]);
+  sheet.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#f0f0f0');
+  sheet.getRange(2, 1, 1, 4).setValues([[sheet.getName(), 'Available', '', '']]);
   
-  if (!logsSheet) {
-    logsSheet = ss.insertSheet('Logs');
-    logsSheet.appendRow(['Timestamp', 'Tool ID', 'Person', 'Action']);
-    logsSheet.getRange(1, 1, 1, 4).setFontWeight('bold');
-  }
-  
-  logsSheet.appendRow([new Date(), tool, person, action]);
-}
-
-// Update tool status in Tools sheet
-function updateToolStatus(ss, tool, person, action) {
-  let toolsSheet = ss.getSheetByName('Tools');
-  
-  if (!toolsSheet) {
-    toolsSheet = ss.insertSheet('Tools');
-    toolsSheet.appendRow(['Tool ID', 'Status', 'Borrowed By', 'Borrowed At', 'Last Borrowed By', 'Last Borrowed At']);
-    toolsSheet.getRange(1, 1, 1, 6).setFontWeight('bold');
-  }
-  
-  const data = toolsSheet.getDataRange().getValues();
-  let toolRow = -1;
-  
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === tool) {
-      toolRow = i + 1;
-      break;
-    }
-  }
-  
-  if (action === 'borrow') {
-    if (toolRow > 0) {
-      // Update existing: set status, borrowed by, borrowed at (only columns 2-4, preserve 5-6)
-      toolsSheet.getRange(toolRow, 2, 1, 3).setValues([['Borrowed', person, new Date()]]);
-    } else {
-      // Tool not pre-registered, add it
-      toolsSheet.appendRow([tool, 'Borrowed', person, new Date(), '', '']);
-    }
-  } else if (action === 'return') {
-    if (toolRow > 0) {
-      // Get current borrow info to save as "last borrowed"
-      const currentBorrowedBy = data[toolRow - 1][2] || person;
-      const currentBorrowedAt = data[toolRow - 1][3] || new Date();
-      
-      // Set status to Available, clear borrowed by/at (columns 2-4)
-      toolsSheet.getRange(toolRow, 2, 1, 3).setValues([['Available', '', '']]);
-      // Set last borrowed info (columns 5-6)
-      toolsSheet.getRange(toolRow, 5, 1, 2).setValues([[currentBorrowedBy, currentBorrowedAt]]);
-    } else {
-      // Tool not found, add as available
-      toolsSheet.appendRow([tool, 'Available', '', '', person, new Date()]);
-    }
-  }
+  // Log section header
+  sheet.getRange(4, 1, 1, 3).setValues([['Timestamp', 'Person', 'Action']]);
+  sheet.getRange(4, 1, 1, 3).setFontWeight('bold').setBackground('#e0e0e0');
 }
 
 function formatDate(date) {

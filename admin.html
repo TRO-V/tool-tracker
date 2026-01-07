@@ -12,7 +12,7 @@
             min-height: 100vh;
             padding: 20px;
         }
-        .container { max-width: 1200px; margin: 0 auto; }
+        .container { max-width: 900px; margin: 0 auto; }
         h1 { color: #333; margin-bottom: 8px; }
         .subtitle { color: #666; margin-bottom: 24px; }
         .refresh-btn {
@@ -26,32 +26,43 @@
             margin-bottom: 20px;
         }
         .refresh-btn:hover { background: #5a6fd6; }
-        .card {
+        .tool-card {
             background: white;
             border-radius: 12px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
             overflow: hidden;
         }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 16px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #f8f9fa; font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; }
-        tr:last-child td { border-bottom: none; }
+        .tool-header {
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #eee;
+        }
+        .tool-id { font-size: 20px; font-weight: 600; color: #333; }
+        .tool-status { display: flex; align-items: center; gap: 12px; }
         .status-badge {
             display: inline-block;
-            padding: 4px 12px;
+            padding: 6px 14px;
             border-radius: 20px;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 600;
         }
         .status-available { background: #d1fae5; color: #065f46; }
         .status-borrowed { background: #fee2e2; color: #991b1b; }
-        .empty { text-align: center; padding: 40px; color: #999; }
+        .borrowed-info { color: #666; font-size: 14px; }
+        .log-section { padding: 16px 20px; background: #fafafa; }
+        .log-title { font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 10px; }
+        .log-item { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+        .log-item:last-child { border-bottom: none; }
+        .log-time { color: #888; min-width: 140px; }
+        .log-action { padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+        .log-borrow { background: #fee2e2; color: #991b1b; }
+        .log-return { background: #d1fae5; color: #065f46; }
+        .no-logs { color: #999; font-style: italic; }
         .loading { text-align: center; padding: 40px; color: #666; }
         .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin-bottom: 20px; }
-        @media (max-width: 600px) {
-            th, td { padding: 12px 8px; font-size: 14px; }
-            .hide-mobile { display: none; }
-        }
     </style>
 </head>
 <body>
@@ -60,68 +71,55 @@
         <p class="subtitle">Admin Dashboard</p>
         <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
         <div id="error" class="error" style="display:none;"></div>
-        <div class="card">
-            <div id="loading" class="loading">Loading tools...</div>
-            <table id="table" style="display:none;">
-                <thead>
-                    <tr>
-                        <th>Tool ID</th>
-                        <th>Status</th>
-                        <th>Borrowed By</th>
-                        <th class="hide-mobile">Borrowed At</th>
-                        <th>Last Borrowed By</th>
-                        <th class="hide-mobile">Last Borrowed At</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBody"></tbody>
-            </table>
-            <div id="empty" class="empty" style="display:none;">No tools found</div>
-        </div>
+        <div id="loading" class="loading">Loading tools...</div>
+        <div id="tools"></div>
     </div>
 
     <script>
-        // CONFIGURE: Replace with your Google Apps Script Web App URL before deploying
-        const API_URL = 'https://script.google.com/macros/s/AKfycbz46HgppksOBbhlSNnN-8cfACaEzyFaF3epd-eEyNFOmOGcXldtA0mES_zpJTWHqr-9ag/exec';
+        const API_URL = 'https://script.google.com/macros/s/AKfycbwdO33kFi7gfD_LZrrljy3jZEVi8tq9Nk9whqbixGTs0RUmAtgwvkDo9QBwSG0LanfsKw/exec';
         
         async function loadData() {
             const loading = document.getElementById('loading');
-            const table = document.getElementById('table');
-            const empty = document.getElementById('empty');
+            const toolsDiv = document.getElementById('tools');
             const error = document.getElementById('error');
-            const tbody = document.getElementById('tableBody');
             
             loading.style.display = 'block';
-            table.style.display = 'none';
-            empty.style.display = 'none';
+            toolsDiv.innerHTML = '';
             error.style.display = 'none';
             
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
-                
                 loading.style.display = 'none';
                 
                 if (!data.tools || data.tools.length === 0) {
-                    empty.style.display = 'block';
+                    toolsDiv.innerHTML = '<p style="text-align:center;color:#999;">No tools found</p>';
                     return;
                 }
                 
-                tbody.innerHTML = data.tools.map(tool => `
-                    <tr>
-                        <td><strong>${escapeHtml(tool.id)}</strong></td>
-                        <td>
-                            <span class="status-badge ${tool.status === 'Available' ? 'status-available' : 'status-borrowed'}">
-                                ${escapeHtml(tool.status)}
-                            </span>
-                        </td>
-                        <td>${escapeHtml(tool.borrowedBy || '-')}</td>
-                        <td class="hide-mobile">${escapeHtml(tool.borrowedAt || '-')}</td>
-                        <td>${escapeHtml(tool.lastBorrowedBy || '-')}</td>
-                        <td class="hide-mobile">${escapeHtml(tool.lastBorrowedAt || '-')}</td>
-                    </tr>
+                toolsDiv.innerHTML = data.tools.map(tool => `
+                    <div class="tool-card">
+                        <div class="tool-header">
+                            <span class="tool-id">${esc(tool.id)}</span>
+                            <div class="tool-status">
+                                ${tool.borrowedBy ? `<span class="borrowed-info">${esc(tool.borrowedBy)} · ${esc(tool.borrowedAt)}</span>` : ''}
+                                <span class="status-badge ${tool.status === 'Available' ? 'status-available' : 'status-borrowed'}">
+                                    ${esc(tool.status)}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="log-section">
+                            <div class="log-title">Recent Activity</div>
+                            ${tool.logs && tool.logs.length > 0 ? tool.logs.map(log => `
+                                <div class="log-item">
+                                    <span class="log-time">${esc(log.timestamp)}</span>
+                                    <span class="log-action ${log.action === 'borrow' ? 'log-borrow' : 'log-return'}">${esc(log.action)}</span>
+                                    <span>${esc(log.person)}</span>
+                                </div>
+                            `).join('') : '<p class="no-logs">No activity yet</p>'}
+                        </div>
+                    </div>
                 `).join('');
-                
-                table.style.display = 'table';
             } catch (e) {
                 loading.style.display = 'none';
                 error.textContent = 'Failed to load data. Check your API URL and try again.';
@@ -129,7 +127,7 @@
             }
         }
         
-        function escapeHtml(text) {
+        function esc(text) {
             if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
