@@ -29,16 +29,24 @@ function doPost(e) {
     
     // Update status (row 2)
     if (action === 'borrow') {
-      // Set borrowed info (columns 2-4), preserve last borrowed (columns 5-6)
-      toolSheet.getRange(2, 2, 1, 3).setValues([['Borrowed', person, new Date()]]);
+      // Only update columns 2-4 (Status, Borrowed By, Borrowed At)
+      // This preserves columns 5-6 (Last Borrowed By/At)
+      toolSheet.getRange(2, 2).setValue('Borrowed');
+      toolSheet.getRange(2, 3).setValue(person);
+      toolSheet.getRange(2, 4).setValue(new Date());
     } else if (action === 'return') {
       // Get current borrow info to save as last borrowed
       const currentData = toolSheet.getRange(2, 3, 1, 2).getValues()[0];
       const lastBorrowedBy = currentData[0] || person;
       const lastBorrowedAt = currentData[1] || new Date();
       
-      // Clear current borrow, set last borrowed
-      toolSheet.getRange(2, 2, 1, 5).setValues([['Available', '', '', lastBorrowedBy, lastBorrowedAt]]);
+      // Set status to Available, clear borrowed info
+      toolSheet.getRange(2, 2).setValue('Available');
+      toolSheet.getRange(2, 3).setValue('');
+      toolSheet.getRange(2, 4).setValue('');
+      // Set last borrowed info
+      toolSheet.getRange(2, 5).setValue(lastBorrowedBy);
+      toolSheet.getRange(2, 6).setValue(lastBorrowedAt);
     }
     
     // Add to log history
