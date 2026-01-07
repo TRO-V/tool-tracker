@@ -1,11 +1,13 @@
 /**
  * Tool Tracking System - Google Apps Script
  * 
- * Paste this code into Google Apps Script (script.google.com)
- * See SETUP.md for detailed instructions
- * 
  * Tools Sheet Columns:
- * Tool ID | Status | Borrowed By | Borrowed At | Returned By | Returned At
+ * Tool ID | Status | Borrowed By | Borrowed At | Last Borrowed By | Last Borrowed At
+ * 
+ * - Pre-populate Tool ID column with your tools
+ * - When borrowed: fills Borrowed By + Borrowed At
+ * - When returned: clears Borrowed By/At, copies to Last Borrowed By/At
+ * - Logs sheet keeps full history
  */
 
 // Handle POST requests (borrow/return actions)
@@ -47,14 +49,14 @@ function doGet(e) {
     
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      if (row[0]) { // Has tool ID
+      if (row[0]) {
         tools.push({
           id: row[0],
           status: row[1] || 'Available',
           borrowedBy: row[2] || '',
           borrowedAt: row[3] ? formatDate(row[3]) : '',
-          returnedBy: row[4] || '',
-          returnedAt: row[5] ? formatDate(row[5]) : ''
+          lastBorrowedBy: row[4] || '',
+          lastBorrowedAt: row[5] ? formatDate(row[5]) : ''
         });
       }
     }
@@ -70,7 +72,6 @@ function doGet(e) {
 function logAction(ss, tool, person, action) {
   let logsSheet = ss.getSheetByName('Logs');
   
-  // Create Logs sheet if it doesn't exist
   if (!logsSheet) {
     logsSheet = ss.insertSheet('Logs');
     logsSheet.appendRow(['Timestamp', 'Tool ID', 'Person', 'Action']);
@@ -84,52 +85,51 @@ function logAction(ss, tool, person, action) {
 function updateToolStatus(ss, tool, person, action) {
   let toolsSheet = ss.getSheetByName('Tools');
   
-  // Create Tools sheet if it doesn't exist
   if (!toolsSheet) {
     toolsSheet = ss.insertSheet('Tools');
-    toolsSheet.appendRow(['Tool ID', 'Status', 'Borrowed By', 'Borrowed At', 'Returned By', 'Returned At']);
+    toolsSheet.appendRow(['Tool ID', 'Status', 'Borrowed By', 'Borrowed At', 'Last Borrowed By', 'Last Borrowed At']);
     toolsSheet.getRange(1, 1, 1, 6).setFontWeight('bold');
   }
   
   const data = toolsSheet.getDataRange().getValues();
   let toolRow = -1;
   
-  // Find existing tool row
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === tool) {
-      toolRow = i + 1; // 1-indexed for Sheets
+      toolRow = i + 1;
       break;
     }
   }
   
   if (action === 'borrow') {
     if (toolRow > 0) {
-      // Update existing row - set borrowed info, clear returned info
-      toolsSheet.getRange(toolRow, 2, 1, 5).setValues([['Borrowed', person, new Date(), '', '']]);
+      // Update existing: set status, borrowed by, borrowed at
+      toolsSheet.getRange(toolRow, 2, 1, 3).setValues([['Borrowed', person, new Date()]]);
     } else {
-      // Add new tool as borrowed
+      // Tool not pre-registered, add it
       toolsSheet.appendRow([tool, 'Borrowed', person, new Date(), '', '']);
     }
   } else if (action === 'return') {
     if (toolRow > 0) {
-      // Update existing row - keep borrow info, add return info
-      toolsSheet.getRange(toolRow, 2).setValue('Available');
-      toolsSheet.getRange(toolRow, 5, 1, 2).setValues([[person, new Date()]]);
+      // Get current borrow info to save as "last borrowed"
+      const currentBorrowedBy = data[toolRow - 1][2] || person;
+      const currentBorrowedAt = data[toolRow - 1][3] || new Date();
+      
+      // Clear current borrow, set last borrowed info
+      toolsSheet.getRange(toolRow, 2, 1, 5).setValues([['Available', '', '', currentBorrowedBy, currentBorrowedAt]]);
     } else {
-      // Add new tool as available (edge case - returning unknown tool)
+      // Tool not found, add as available
       toolsSheet.appendRow([tool, 'Available', '', '', person, new Date()]);
     }
   }
 }
 
-// Format date for display
 function formatDate(date) {
   if (!date) return '';
   const d = new Date(date);
   return Utilities.formatDate(d, Session.getScriptTimeZone(), 'MMM dd, yyyy HH:mm');
 }
 
-// Return JSON response with CORS headers
 function jsonResponse(data) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
