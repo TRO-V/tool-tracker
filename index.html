@@ -41,7 +41,6 @@
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             font-size: 16px;
-            transition: border-color 0.2s;
         }
         .input-group input:focus { outline: none; border-color: #667eea; }
         .btn {
@@ -52,10 +51,8 @@
             font-size: 18px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.1s, opacity 0.2s;
             margin-bottom: 12px;
         }
-        .btn:active { transform: scale(0.98); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn-borrow { background: #10b981; color: white; }
         .btn-return { background: #f59e0b; color: white; }
@@ -64,10 +61,23 @@
         .status { text-align: center; padding: 16px; border-radius: 8px; margin-top: 16px; display: none; }
         .status.success { background: #d1fae5; color: #065f46; display: block; }
         .status.error { background: #fee2e2; color: #991b1b; display: block; }
-        .loading { opacity: 0.7; pointer-events: none; }
+        .status.pending { background: #fef3c7; color: #92400e; display: block; }
+        .status.sending { background: #dbeafe; color: #1e40af; display: block; }
+        .offline-badge { 
+            position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+            background: #991b1b; color: white; padding: 8px 16px; border-radius: 20px;
+            font-size: 12px; display: none; z-index: 100;
+        }
+        .offline-badge.show { display: block; }
+        .pending-count {
+            background: #f59e0b; color: white; padding: 4px 10px; border-radius: 12px;
+            font-size: 12px; margin-top: 12px; display: none; text-align: center;
+        }
+        .pending-count.show { display: block; }
     </style>
 </head>
 <body>
+    <div id="offlineBadge" class="offline-badge">⚠ Offline</div>
     <div class="card">
         <div class="tool-id">
             <label>Tool ID</label>
@@ -84,23 +94,37 @@
         
         <div id="actions" style="display:none;">
             <p class="greeting">Hi, <span id="userName"></span>!</p>
-            <button class="btn btn-borrow" onclick="action('borrow')">Borrow Tool</button>
-            <button class="btn btn-return" onclick="action('return')">Return Tool</button>
+            <button class="btn btn-borrow" id="borrowBtn" onclick="action('borrow')">Borrow Tool</button>
+            <button class="btn btn-return" id="returnBtn" onclick="action('return')">Return Tool</button>
             <button class="btn btn-change" onclick="changeName()">Not you? Change name</button>
+            <div id="pendingCount" class="pending-count"></div>
         </div>
         
         <div id="status" class="status"></div>
     </div>
 
     <script>
-        // CONFIGURE: Replace with your Google Apps Script Web App URL before deploying
         const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxfylsJA3klqJxcQH9eOSdlpalDzXUQYr_RmY_NeKaA-MIfPuJfvbLwmmM7pdn-2l4Q9A/exec';
+        const QUEUE_KEY = 'toolTrackerQueue';
+        const TIMEOUT = 15000; // 15 second timeout
+        const MAX_RETRIES = 3;
         
         const params = new URLSearchParams(window.location.search);
         const toolId = params.get('tool') || 'UNKNOWN';
         document.getElementById('toolId').textContent = toolId;
         
+        // Track online status
+        let isOnline = navigator.onLine;
+        window.addEventListener('online', () => { isOnline = true; updateOfflineBadge(); processQueue(); });
+        window.addEventListener('offline', () => { isOnline = false; updateOfflineBadge(); });
+        
+        function updateOfflineBadge() {
+            document.getElementById('offlineBadge').classList.toggle('show', !isOnline);
+        }
+        
         function init() {
+            updateOfflineBadge();
+            updatePendingCount();
             const savedName = localStorage.getItem('toolTrackerName');
             if (savedName) {
                 showActions(savedName);
@@ -108,14 +132,13 @@
                 document.getElementById('nameEntry').style.display = 'block';
                 document.getElementById('actions').style.display = 'none';
             }
+            // Try to process any queued items
+            if (isOnline) processQueue();
         }
-        
+
         function saveName() {
             const name = document.getElementById('nameInput').value.trim();
-            if (!name) {
-                showStatus('Please enter your name', 'error');
-                return;
-            }
+            if (!name) { showStatus('Please enter your name', 'error'); return; }
             localStorage.setItem('toolTrackerName', name);
             showActions(name);
         }
@@ -134,24 +157,104 @@
             hideStatus();
         }
         
-        async function action(type) {
-            const name = localStorage.getItem('toolTrackerName');
-            const card = document.querySelector('.card');
-            card.classList.add('loading');
-            hideStatus();
+        // Queue management
+        function getQueue() {
+            try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }
+            catch { return []; }
+        }
+        
+        function saveQueue(queue) {
+            localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+            updatePendingCount();
+        }
+        
+        function addToQueue(item) {
+            const queue = getQueue();
+            queue.push({ ...item, id: Date.now(), retries: 0 });
+            saveQueue(queue);
+        }
+        
+        function removeFromQueue(id) {
+            const queue = getQueue().filter(item => item.id !== id);
+            saveQueue(queue);
+        }
+        
+        function updatePendingCount() {
+            const queue = getQueue();
+            const el = document.getElementById('pendingCount');
+            if (queue.length > 0) {
+                el.textContent = `${queue.length} pending sync${queue.length > 1 ? 's' : ''}`;
+                el.classList.add('show');
+            } else {
+                el.classList.remove('show');
+            }
+        }
+        
+        // Send with timeout and retry
+        async function sendRequest(data, retryCount = 0) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
             
             try {
-                const response = await fetch(WEBHOOK_URL, {
+                await fetch(WEBHOOK_URL, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tool: toolId, person: name, action: type })
+                    body: JSON.stringify(data),
+                    signal: controller.signal
                 });
-                showStatus(`Tool ${type === 'borrow' ? 'borrowed' : 'returned'} successfully!`, 'success');
+                clearTimeout(timeoutId);
+                return { success: true };
             } catch (error) {
-                showStatus('Error: Could not connect to server', 'error');
+                clearTimeout(timeoutId);
+                if (retryCount < MAX_RETRIES && isOnline) {
+                    await new Promise(r => setTimeout(r, 1000 * (retryCount + 1)));
+                    return sendRequest(data, retryCount + 1);
+                }
+                return { success: false, error };
             }
-            card.classList.remove('loading');
+        }
+        
+        async function action(type) {
+            const name = localStorage.getItem('toolTrackerName');
+            const data = { tool: toolId, person: name, action: type };
+            
+            setButtonsDisabled(true);
+            showStatus('Sending...', 'sending');
+            
+            if (!isOnline) {
+                addToQueue(data);
+                showStatus(`Saved offline. Will sync when connected.`, 'pending');
+                setButtonsDisabled(false);
+                return;
+            }
+            
+            const result = await sendRequest(data);
+            
+            if (result.success) {
+                showStatus(`Tool ${type === 'borrow' ? 'borrowed' : 'returned'} successfully!`, 'success');
+            } else {
+                addToQueue(data);
+                showStatus(`Network slow. Queued for sync.`, 'pending');
+            }
+            setButtonsDisabled(false);
+        }
+        
+        async function processQueue() {
+            const queue = getQueue();
+            if (queue.length === 0 || !isOnline) return;
+            
+            for (const item of queue) {
+                const result = await sendRequest({ tool: item.tool, person: item.person, action: item.action });
+                if (result.success) {
+                    removeFromQueue(item.id);
+                }
+            }
+        }
+        
+        function setButtonsDisabled(disabled) {
+            document.getElementById('borrowBtn').disabled = disabled;
+            document.getElementById('returnBtn').disabled = disabled;
         }
         
         function showStatus(message, type) {
@@ -160,11 +263,11 @@
             status.className = 'status ' + type;
         }
         
-        function hideStatus() {
-            document.getElementById('status').className = 'status';
-        }
+        function hideStatus() { document.getElementById('status').className = 'status'; }
         
         init();
+        // Periodically try to sync queue
+        setInterval(() => { if (isOnline) processQueue(); }, 30000);
     </script>
 </body>
 </html>
