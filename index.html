@@ -218,24 +218,24 @@
         async function action(type) {
             const name = localStorage.getItem('toolTrackerName');
             const data = { tool: toolId, person: name, action: type };
-            setButtonsDisabled(true);
-            showStatus('Processing...', 'sending');
             
+            // Optimistic UI - show success immediately
+            showStatus(`Tool ${type === 'borrow' ? 'borrowed' : 'returned'} ✓`, 'success');
+            setButtonsDisabled(true);
+            setTimeout(() => setButtonsDisabled(false), 1000); // Brief disable to prevent double-tap
+            
+            // Send in background
             if (!isOnline) {
                 addToQueue(data);
-                showStatus('Saved offline. Will sync when connected.', 'pending');
-                setButtonsDisabled(false);
                 return;
             }
             
-            const result = await sendRequest(data);
-            if (result.success) {
-                showStatus(`Tool ${type === 'borrow' ? 'borrowed' : 'returned'} successfully`, 'success');
-            } else {
-                addToQueue(data);
-                showStatus('Connection issue. Queued for sync.', 'pending');
-            }
-            setButtonsDisabled(false);
+            // Fire and forget - don't wait
+            sendRequest(data).then(result => {
+                if (!result.success) {
+                    addToQueue(data);
+                }
+            });
         }
         
         async function processQueue() {
