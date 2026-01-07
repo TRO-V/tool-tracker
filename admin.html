@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tool Tracker - Admin</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { color: #333; margin-bottom: 8px; }
+        .subtitle { color: #666; margin-bottom: 24px; }
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .refresh-btn:hover { background: #5a6fd6; }
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 16px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; }
+        tr:last-child td { border-bottom: none; }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-available { background: #d1fae5; color: #065f46; }
+        .status-borrowed { background: #fee2e2; color: #991b1b; }
+        .empty { text-align: center; padding: 40px; color: #999; }
+        .loading { text-align: center; padding: 40px; color: #666; }
+        .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin-bottom: 20px; }
+        @media (max-width: 600px) {
+            th, td { padding: 12px 8px; font-size: 14px; }
+            .hide-mobile { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Tool Tracker</h1>
+        <p class="subtitle">Admin Dashboard</p>
+        <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+        <div id="error" class="error" style="display:none;"></div>
+        <div class="card">
+            <div id="loading" class="loading">Loading tools...</div>
+            <table id="table" style="display:none;">
+                <thead>
+                    <tr>
+                        <th>Tool ID</th>
+                        <th>Status</th>
+                        <th>Borrowed By</th>
+                        <th class="hide-mobile">Since</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+            <div id="empty" class="empty" style="display:none;">No tools found</div>
+        </div>
+    </div>
+
+    <script>
+        // CONFIGURE: Replace with your Google Apps Script Web App URL before deploying
+        const API_URL = 'https://script.google.com/macros/s/AKfycby81DQSqndCHgDlMNtDZ5F7y_u2gtNyjvOSq1xGuBmN77_SfJmkbramEqN3NOoi6fDLNQ/exec';
+        
+        async function loadData() {
+            const loading = document.getElementById('loading');
+            const table = document.getElementById('table');
+            const empty = document.getElementById('empty');
+            const error = document.getElementById('error');
+            const tbody = document.getElementById('tableBody');
+            
+            loading.style.display = 'block';
+            table.style.display = 'none';
+            empty.style.display = 'none';
+            error.style.display = 'none';
+            
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                
+                loading.style.display = 'none';
+                
+                if (!data.tools || data.tools.length === 0) {
+                    empty.style.display = 'block';
+                    return;
+                }
+                
+                tbody.innerHTML = data.tools.map(tool => `
+                    <tr>
+                        <td><strong>${escapeHtml(tool.id)}</strong></td>
+                        <td>
+                            <span class="status-badge ${tool.status === 'Available' ? 'status-available' : 'status-borrowed'}">
+                                ${escapeHtml(tool.status)}
+                            </span>
+                        </td>
+                        <td>${escapeHtml(tool.borrowedBy || '-')}</td>
+                        <td class="hide-mobile">${escapeHtml(tool.borrowedAt || '-')}</td>
+                    </tr>
+                `).join('');
+                
+                table.style.display = 'table';
+            } catch (e) {
+                loading.style.display = 'none';
+                error.textContent = 'Failed to load data. Check your API URL and try again.';
+                error.style.display = 'block';
+            }
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        loadData();
+    </script>
+</body>
+</html>
