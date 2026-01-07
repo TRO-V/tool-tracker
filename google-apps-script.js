@@ -117,8 +117,12 @@ function setupToolSheet(sheet) {
 
 function formatDate(date) {
   if (!date) return '';
-  const d = new Date(date);
-  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'MMM dd, yyyy HH:mm');
+  try {
+    const d = new Date(date);
+    return Utilities.formatDate(d, Session.getScriptTimeZone(), 'dd MMM yyyy, HH:mm');
+  } catch (e) {
+    return String(date);
+  }
 }
 
 function jsonResponse(data) {
