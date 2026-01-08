@@ -54,22 +54,12 @@
             font-weight: 600;
             cursor: pointer;
             margin-bottom: 12px;
-            transition: background 0.15s;
         }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-borrow { background: #1f2937; color: white; }
-        .btn-borrow:hover:not(:disabled) { background: #111827; }
         .btn-return { background: #f3f4f6; color: #1f2937; border: 1px solid #d1d5db; }
-        .btn-return:hover:not(:disabled) { background: #e5e7eb; }
         .btn-save { background: #1f2937; color: white; }
-        .btn-save:hover { background: #111827; }
         .btn-change { background: none; color: #6b7280; font-size: 13px; padding: 8px; }
-        .btn-change:hover { color: #1f2937; }
-        .status { text-align: center; padding: 14px; border-radius: 6px; margin-top: 16px; display: none; font-size: 14px; }
-        .status.success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; display: block; }
-        .status.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; display: block; }
-        .status.pending { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; display: block; }
-        .status.sending { background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; display: block; }
         .offline-badge { 
             position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
             background: #1f2937; color: white; padding: 8px 16px; border-radius: 4px;
@@ -83,10 +73,60 @@
         }
         .pending-count.show { display: block; }
         .divider { height: 1px; background: #e5e7eb; margin: 16px 0; }
+        
+        /* Modal Overlay */
+        .modal {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal.show { display: flex; }
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 48px;
+            text-align: center;
+            max-width: 320px;
+            width: 90%;
+            animation: modalIn 0.2s ease;
+        }
+        @keyframes modalIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        .modal-icon {
+            width: 80px; height: 80px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 40px;
+        }
+        .modal-icon.success { background: #ecfdf5; color: #059669; }
+        .modal-icon.error { background: #fef2f2; color: #dc2626; }
+        .modal-icon.pending { background: #fffbeb; color: #d97706; }
+        .modal-title { font-size: 22px; font-weight: 600; color: #1f2937; margin-bottom: 8px; }
+        .modal-message { font-size: 14px; color: #6b7280; margin-bottom: 24px; }
+        .modal-btn {
+            background: #1f2937; color: white;
+            border: none; padding: 12px 32px; border-radius: 6px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <div id="offlineBadge" class="offline-badge">Offline Mode</div>
+    
+    <!-- Success/Error Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div id="modalIcon" class="modal-icon success">✓</div>
+            <div id="modalTitle" class="modal-title">Success</div>
+            <div id="modalMessage" class="modal-message">Tool borrowed successfully</div>
+            <button class="modal-btn" onclick="closeModal()">Done</button>
+        </div>
+    </div>
+    
     <div class="card">
         <div class="tool-id">
             <label>Tool ID</label>
@@ -109,8 +149,6 @@
             <button class="btn btn-change" onclick="changeName()">Switch User</button>
             <div id="pendingCount" class="pending-count"></div>
         </div>
-        
-        <div id="status" class="status"></div>
     </div>
 
     <script>
@@ -130,7 +168,7 @@
         function updateOfflineBadge() {
             document.getElementById('offlineBadge').classList.toggle('show', !isOnline);
         }
-        
+
         function init() {
             updateOfflineBadge();
             updatePendingCount();
@@ -145,7 +183,7 @@
 
         function saveName() {
             const name = document.getElementById('nameInput').value.trim();
-            if (!name) { showStatus('Please enter your name', 'error'); return; }
+            if (!name) { showModal('error', 'Error', 'Please enter your name'); return; }
             localStorage.setItem('toolTrackerName', name);
             showActions(name);
         }
@@ -161,7 +199,6 @@
             document.getElementById('nameEntry').style.display = 'block';
             document.getElementById('actions').style.display = 'none';
             document.getElementById('nameInput').value = '';
-            hideStatus();
         }
         
         function getQueue() {
@@ -218,24 +255,26 @@
         async function action(type) {
             const name = localStorage.getItem('toolTrackerName');
             const data = { tool: toolId, person: name, action: type };
+            const actionText = type === 'borrow' ? 'Borrowed' : 'Returned';
             
-            // Optimistic UI - show success immediately
-            showStatus(`Tool ${type === 'borrow' ? 'borrowed' : 'returned'} ✓`, 'success');
             setButtonsDisabled(true);
-            setTimeout(() => setButtonsDisabled(false), 1000); // Brief disable to prevent double-tap
             
-            // Send in background
             if (!isOnline) {
                 addToQueue(data);
+                showModal('pending', 'Saved Offline', `Tool ${actionText.toLowerCase()}. Will sync when connected.`);
+                setButtonsDisabled(false);
                 return;
             }
             
-            // Fire and forget - don't wait
+            // Show success immediately (optimistic)
+            showModal('success', `Tool ${actionText}`, `${toolId} has been ${actionText.toLowerCase()} by ${name}`);
+            
+            // Send in background
             sendRequest(data).then(result => {
-                if (!result.success) {
-                    addToQueue(data);
-                }
+                if (!result.success) addToQueue(data);
             });
+            
+            setButtonsDisabled(false);
         }
         
         async function processQueue() {
@@ -252,13 +291,18 @@
             document.getElementById('returnBtn').disabled = disabled;
         }
         
-        function showStatus(message, type) {
-            const status = document.getElementById('status');
-            status.textContent = message;
-            status.className = 'status ' + type;
+        function showModal(type, title, message) {
+            const icons = { success: '✓', error: '✕', pending: '⏳' };
+            document.getElementById('modalIcon').className = 'modal-icon ' + type;
+            document.getElementById('modalIcon').textContent = icons[type];
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalMessage').textContent = message;
+            document.getElementById('modal').classList.add('show');
         }
         
-        function hideStatus() { document.getElementById('status').className = 'status'; }
+        function closeModal() {
+            document.getElementById('modal').classList.remove('show');
+        }
         
         init();
         setInterval(() => { if (isOnline) processQueue(); }, 30000);
